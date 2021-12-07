@@ -7,22 +7,7 @@ import de.zalando.ep.zalenium.streams.InputStreamGroupIterator;
 import de.zalando.ep.zalenium.streams.MapInputStreamAdapter;
 import de.zalando.ep.zalenium.streams.TarInputStreamGroupWrapper;
 import de.zalando.ep.zalenium.util.Environment;
-import io.fabric8.kubernetes.api.model.Container;
-import io.fabric8.kubernetes.api.model.ContainerStateTerminated;
-import io.fabric8.kubernetes.api.model.ContainerStatus;
-import io.fabric8.kubernetes.api.model.DoneablePod;
-import io.fabric8.kubernetes.api.model.EnvVar;
-import io.fabric8.kubernetes.api.model.HostAlias;
-import io.fabric8.kubernetes.api.model.LocalObjectReference;
-import io.fabric8.kubernetes.api.model.Pod;
-import io.fabric8.kubernetes.api.model.PodFluent;
-import io.fabric8.kubernetes.api.model.PodList;
-import io.fabric8.kubernetes.api.model.PodSecurityContext;
-import io.fabric8.kubernetes.api.model.Quantity;
-import io.fabric8.kubernetes.api.model.SecurityContext;
-import io.fabric8.kubernetes.api.model.Toleration;
-import io.fabric8.kubernetes.api.model.Volume;
-import io.fabric8.kubernetes.api.model.VolumeMount;
+import io.fabric8.kubernetes.api.model.*;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.dsl.ExecListener;
 import io.fabric8.kubernetes.client.dsl.ExecWatch;
@@ -61,6 +46,8 @@ public class KubernetesContainerClient implements ContainerClient {
     private static final String DEFAULT_ZALENIUM_CONTAINER_NAME = "zalenium";
     private static final String ZALENIUM_KUBERNETES_TOLERATIONS = "ZALENIUM_KUBERNETES_TOLERATIONS";
     private static final String ZALENIUM_KUBERNETES_NODE_SELECTOR = "ZALENIUM_KUBERNETES_NODE_SELECTOR";
+    private static final String ZALENIUM_PERSISTENT_VOLUME_CLAIM = "ZALENIUM_PERSISTENT_VOLUME_CLAIM";
+    private static final String ZALENIUM_VOLUME_MOUNT_PATH= "ZALENIUM_VOLUME_MOUNT_PATH";
 
     private KubernetesClient client;
 
@@ -78,6 +65,8 @@ public class KubernetesContainerClient implements ContainerClient {
     private List<Toleration> tolerations = new ArrayList<>();
     private String imagePullPolicy;
     private String schedulerName;
+    private String persistentVolumeClaim;
+    private String volumeMountPath;
     private List<LocalObjectReference> imagePullSecrets;
     private PodSecurityContext configuredPodSecurityContext;
     private SecurityContext configuredContainerSecurityContext;
@@ -205,6 +194,8 @@ public class KubernetesContainerClient implements ContainerClient {
     }
 
     private void discoverFolderMounts() {
+        persistentVolumeClaim = environment.getStringEnvVariable(ZALENIUM_PERSISTENT_VOLUME_CLAIM, "browsercache-pvc");
+        volumeMountPath = environment.getStringEnvVariable(ZALENIUM_VOLUME_MOUNT_PATH, "/home/seluser/.cache/google-chrome/Default/Cache");
         List<VolumeMount> volumeMounts = zaleniumPod.getSpec().getContainers().get(0).getVolumeMounts();
 
         List<VolumeMount> validMounts = volumeMounts.stream()
@@ -435,6 +426,9 @@ public class KubernetesContainerClient implements ContainerClient {
         config.setPodSecurityContext(configuredPodSecurityContext);
         config.setContainerSecurityContext(configuredContainerSecurityContext);
 
+        config.setPersistentVolumeClaim(persistentVolumeClaim);
+        config.setVolumeMountPath(volumeMountPath);
+
         DoneablePod doneablePod = createDoneablePod.apply(config);
 
         // Create the container
@@ -641,6 +635,7 @@ public class KubernetesContainerClient implements ContainerClient {
     }
 
     public static DoneablePod createDoneablePodDefaultImpl(PodConfiguration config) {
+        final String cacheVolumeName = "cache";
 
         PodFluent.SpecNested<DoneablePod> doneablePodSpecNested = config.getClient().pods()
                 .createNew()
@@ -659,6 +654,10 @@ public class KubernetesContainerClient implements ContainerClient {
                         .withNewEmptyDir()
                             .withMedium("Memory")
                         .endEmptyDir()
+                    .and()
+                    .addNewVolume()
+                        .withName(cacheVolumeName)
+                        .withPersistentVolumeClaim(new PersistentVolumeClaimVolumeSource(config.getPersistentVolumeClaim(), false))
                     .endVolume()
                     .addNewContainer()
                         .withName("selenium-node")
@@ -669,6 +668,10 @@ public class KubernetesContainerClient implements ContainerClient {
                         .addNewVolumeMount()
                             .withName("dshm")
                             .withMountPath("/dev/shm")
+                        .and()
+                        .addNewVolumeMount()
+                            .withName(cacheVolumeName)
+                            .withMountPath(config.getVolumeMountPath())
                         .endVolumeMount()
                         .withNewResources()
                             .addToLimits(config.getPodLimits())

@@ -38,6 +38,9 @@ public class PodConfiguration {
     private SecurityContext containerSecurityContext;
     private String schedulerName;
 
+    private String persistentVolumeClaim;
+    private String volumeMountPath;
+
     public String getNodePort() {
         return nodePort;
     }
@@ -154,5 +157,21 @@ public class PodConfiguration {
 
     public void setSchedulerName(String schedulerName) {
         this.schedulerName = schedulerName;
+    }
+
+    public String getPersistentVolumeClaim() {
+        return persistentVolumeClaim;
+    }
+
+    public void setPersistentVolumeClaim(String persistentVolumeClaim) {
+        this.persistentVolumeClaim = persistentVolumeClaim;
+    }
+
+    public String getVolumeMountPath() {
+        return volumeMountPath;
+    }
+
+    public void setVolumeMountPath(String volumeMountPath) {
+        this.volumeMountPath = volumeMountPath;
     }
 }
